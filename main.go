@@ -81,9 +81,7 @@ func LoadConfiguration() {
 func GetClient() {
 	// If client has not been set yet, build it
 	if client == nil {
-		if config == nil {
-			LoadConfiguration()
-		}
+		LoadConfiguration()
 		client = flickr.NewFlickrClient(config.APIKey, config.APISecret)
 		client.OAuthToken = config.OAuthToken
 		client.OAuthTokenSecret = config.OAuthTokenSecret
@@ -93,9 +91,7 @@ func GetClient() {
 // RetrieveFromFlickr returns a map associating the title of an album to
 // a FlickrPhotoset{id string, photos []string}
 func RetrieveFromFlickr() map[string]FlickrPhotoset {
-	if client == nil {
-		GetClient()
-	}
+	GetClient()
 
 	result := make(map[string]FlickrPhotoset)
 
@@ -129,9 +125,8 @@ func RetrieveFromFlickr() map[string]FlickrPhotoset {
 
 // DeleteDupes deletes duplicate files from an album
 func DeleteDupes() {
-	if client == nil {
-		GetClient()
-	}
+	GetClient()
+
 	fromFlickr := RetrieveFromFlickr()
 	for albumName, flickrAlbum := range fromFlickr {
 		fmt.Println("In album: ", albumName, ": ", flickrAlbum.Photos)
@@ -151,9 +146,7 @@ func UploadPhoto(albumID string, path string) (string, string, error) {
 	photoID := ""
 	currentDir := filepath.Base(filepath.Dir(path))
 
-	if client == nil {
-		GetClient()
-	}
+	GetClient()
 
 	resp, err := flickr.UploadFile(client, path, nil)
 	if err != nil {
