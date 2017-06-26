@@ -1,0 +1,7 @@
+{
+  "api_key": "apikeyforsynckr",
+  "api_secret": "apisecretforsynckr",
+  "photo_library_path": "/home/myuser/mypictures", 
+  "oauth_token": "oauthtoken",
+  "oauth_token_secret": "oauthtokensecret"
+}
