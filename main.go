@@ -17,11 +17,9 @@ import (
 	"gopkg.in/masci/flickr.v2/photosets"
 )
 
-var config *SynckrConfig
-var client *flickr.FlickrClient
-
 // SynckrConfig contains all configuration parameters for
-// the application. It picks data from both json files
+// the application.
+// It's filled from the json config file through LoadConfiguration
 type SynckrConfig struct {
 	APIKey           string `json:"api_key"`
 	APISecret        string `json:"api_secret"`
@@ -60,38 +58,34 @@ func Leave(message string) {
 
 // LoadConfiguration reads json configuration files and returns
 // a SynckrConfig pointer
-func LoadConfiguration() {
-	// If config has not been loaded yet, retrieve it
-	if config == nil {
-		raw, err := ioutil.ReadFile("./synckr.conf.json")
+func LoadConfiguration() (SynckrConfig, error) {
+	var config SynckrConfig
+	raw, err := ioutil.ReadFile("./synckr.conf.json")
 
-		if err != nil {
-			Leave(err.Error())
-		}
-
-		json.Unmarshal(raw, &config)
-		if config.APIKey == "" || config.APISecret == "" || config.OAuthToken == "" || config.OAuthTokenSecret == "" {
-			Leave("Please set FLICKRGO_API_KEY, FLICKRGO_API_SECRET, " +
-				"FLICKRGO_OAUTH_TOKEN and FLICKRGO_OAUTH_TOKEN_SECRET env vars")
-		}
+	if err != nil {
+		Leave(err.Error())
 	}
+
+	json.Unmarshal(raw, &config)
+	if config.APIKey == "" || config.APISecret == "" || config.OAuthToken == "" || config.OAuthTokenSecret == "" {
+		Leave("Please set FLICKRGO_API_KEY, FLICKRGO_API_SECRET, " +
+			"FLICKRGO_OAUTH_TOKEN and FLICKRGO_OAUTH_TOKEN_SECRET env vars")
+	}
+	return config, err
 }
 
 // GetClient returns a flickr client
-func GetClient() {
-	// If client has not been set yet, build it
-	if client == nil {
-		LoadConfiguration()
-		client = flickr.NewFlickrClient(config.APIKey, config.APISecret)
-		client.OAuthToken = config.OAuthToken
-		client.OAuthTokenSecret = config.OAuthTokenSecret
-	}
+func GetClient(config *SynckrConfig) (flickr.FlickrClient, error) {
+	var err error
+	client := flickr.NewFlickrClient(config.APIKey, config.APISecret)
+	client.OAuthToken = config.OAuthToken
+	client.OAuthTokenSecret = config.OAuthTokenSecret
+	return *client, err
 }
 
 // RetrieveFromFlickr returns a map associating the title of an album to
 // a FlickrPhotoset{id string, photos []string}
-func RetrieveFromFlickr() map[string]FlickrPhotoset {
-	GetClient()
+func RetrieveFromFlickr(client *flickr.FlickrClient) map[string]FlickrPhotoset {
 
 	result := make(map[string]FlickrPhotoset)
 
@@ -124,10 +118,9 @@ func RetrieveFromFlickr() map[string]FlickrPhotoset {
 }
 
 // DeleteDupes deletes duplicate files from an album
-func DeleteDupes() {
-	GetClient()
+func DeleteDupes(client *flickr.FlickrClient) {
 
-	fromFlickr := RetrieveFromFlickr()
+	fromFlickr := RetrieveFromFlickr(client)
 	for albumName, flickrAlbum := range fromFlickr {
 		fmt.Println("In album: ", albumName, ": ", flickrAlbum.Photos)
 		for phi, ph := range flickrAlbum.Photos {
@@ -139,14 +132,11 @@ func DeleteDupes() {
 	}
 }
 
-// UploadPhoto uploads a given path into a given album
-// it creates a new album if none is provided
-func UploadPhoto(albumID string, path string) (string, string, error) {
+// UploadPhoto uploads a given path into a given album. It creates a new album if none is provided
+func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (string, string, error) {
 	result := albumID
 	photoID := ""
 	currentDir := filepath.Base(filepath.Dir(path))
-
-	GetClient()
 
 	resp, err := flickr.UploadFile(client, path, nil)
 	if err != nil {
@@ -181,14 +171,19 @@ func UploadPhoto(albumID string, path string) (string, string, error) {
 	return result, photoID, err
 }
 
-// main is the pricipal entry point
-func main() {
+// Process will scan the files within the local drive and identify if they need to be uploaded
+// to flickr.
+// If a file already exists in flickr
+//   --> it will be skipped
+// If a file doesn't exist yet
+//   --> it will be uploaded into an album which title will be the parent directory name
+func Process(config *SynckrConfig, client *flickr.FlickrClient) (map[string]FlickrPhotoset, error) {
+	var err error
 
-	fromFlickr := RetrieveFromFlickr()
+	fromFlickr := RetrieveFromFlickr(client)
 
 	// Walk photolibrarypath using a lambda as walk function
 	filepath.Walk(config.PhotoLibraryPath, func(path string, info os.FileInfo, err error) error {
-		err = nil
 		// Only treat files
 		if !info.IsDir() {
 			photoName := strings.Split(filepath.Base(path), ".")[0]
@@ -205,13 +200,13 @@ func main() {
 						return fromFlickr[currentDir].Photos[i].Title >= photoName
 					})
 					if phi == len(fromFlickr[currentDir].Photos) {
-						UploadPhoto(fromFlickr[currentDir].ID, path)
+						UploadPhoto(client, fromFlickr[currentDir].ID, path)
 					} else {
 						fmt.Println("[SKIP]Already uploded ", photoName, " in album ", currentDir)
 					}
 				} else {
 					// The album is not present in flickr. The photo needs to be uploaded
-					photosetID, photoID, err := UploadPhoto("", path)
+					photosetID, photoID, err := UploadPhoto(client, "", path)
 					if err != nil {
 						fmt.Println("[ERROR] Failed creating new album. ", err)
 					} else {
@@ -224,7 +219,24 @@ func main() {
 			}
 
 		}
-		return nil
+		return err
 	})
+
+	return fromFlickr, err
+}
+
+// main is the pricipal entry point
+func main() {
+	config, err := LoadConfiguration()
+	if err != nil {
+		Leave("Unable to load configuration")
+	}
+
+	client, err := GetClient(&config)
+	if err != nil {
+		Leave("Unable to instanciate flickrClient")
+	}
+
+	Process(&config, &client)
 
 }
