@@ -1,5 +1,7 @@
 package: github.com/koukihai/synckr
 import:
+- package: github.com/sirupsen/logrus
+  version: v1.0.0
 - package: gopkg.in/masci/flickr.v2
   version: "0.1"
   subpackages:
