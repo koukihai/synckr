@@ -67,8 +67,11 @@ func LoadConfiguration() (SynckrConfig, error) {
 	}
 
 	json.Unmarshal(raw, &config)
-	if config.APIKey == "" || config.APISecret == "" || config.OAuthToken == "" || config.OAuthTokenSecret == "" {
-		log.Fatal("Missing variables in config files. Ensure api_key, api_secret, oauth_token, oauth_token_secret are set")
+	if config.APIKey == "" || config.APISecret == "" {
+		log.WithFields(logrus.Fields{
+			"api_key":    config.APIKey,
+			"api_secret": config.APISecret,
+		}).Fatal("Please visit https://www.flickr.com/services/apps/create/noncommercial/ to apply for a non-commercial key.")
 	}
 	return config, err
 }
@@ -77,9 +80,56 @@ func LoadConfiguration() (SynckrConfig, error) {
 func GetClient(config *SynckrConfig) (flickr.FlickrClient, error) {
 	var err error
 	client := flickr.NewFlickrClient(config.APIKey, config.APISecret)
+
+	if config.OAuthToken == "" || config.OAuthTokenSecret == "" {
+		oauthToken, oauthTokenSecret, err := GetOAuthToken(client)
+		if err != nil {
+			log.Fatal("Could not generate OAuthToken")
+		}
+
+		log.WithFields(logrus.Fields{
+			"oauth_token":        oauthToken,
+			"oauth_token_secret": oauthTokenSecret,
+		}).Info("Please update synckr.conf.json with the corresponding oauth_token and oauth_token_secret")
+
+		config.OAuthToken = oauthToken
+		config.OAuthTokenSecret = oauthTokenSecret
+
+	}
+
 	client.OAuthToken = config.OAuthToken
 	client.OAuthTokenSecret = config.OAuthTokenSecret
 	return *client, err
+}
+
+// GetOAuthToken helps you creating an OAuthToken
+func GetOAuthToken(client *flickr.FlickrClient) (string, string, error) {
+	// get a request token
+	tok, err := flickr.GetRequestToken(client)
+	if err != nil {
+		return "", "", err
+	}
+
+	// build the authorization URL
+	url, err := flickr.GetAuthorizeUrl(client, tok)
+	if err != nil {
+		return "", "", err
+	}
+
+	// ask user to hit the authorization url with
+	// their browser, authorize this application and coming
+	// back with the confirmation token
+	var oauthVerifier string
+	fmt.Println("Open your browser at this url:", url)
+	fmt.Print("Then, insert the code:")
+	fmt.Scanln(&oauthVerifier)
+
+	// finally, get the access token
+	accessTok, err := flickr.GetAccessToken(client, tok, oauthVerifier)
+	fmt.Println("Successfully retrieved OAuth token", accessTok.OAuthToken, accessTok.OAuthTokenSecret)
+
+	return accessTok.OAuthToken, accessTok.OAuthTokenSecret, err
+
 }
 
 // RetrieveFromFlickr returns a map associating the title of an album to
@@ -185,6 +235,11 @@ func Process(config *SynckrConfig, client *flickr.FlickrClient) (map[string]Flic
 	var err error
 
 	fromFlickr := RetrieveFromFlickr(client)
+	if config.PhotoLibraryPath == "" {
+		log.WithFields(logrus.Fields{
+			"photo_library_path": config.PhotoLibraryPath,
+		}).Fatal("Please update synckr.conf.json")
+	}
 
 	// Walk photolibrarypath using a lambda as walk function
 	_, err = os.Stat(config.PhotoLibraryPath)
@@ -219,18 +274,25 @@ func Process(config *SynckrConfig, client *flickr.FlickrClient) (map[string]Flic
 		// Only treat files
 		if !info.IsDir() {
 			isAllowedExt := false
+			isRootDir := false
+
+			if filepath.Dir(path) == config.PhotoLibraryPath {
+				log.WithField("path", path).Info("[SKIP] Root folder not processed.")
+				isRootDir = true
+			}
+
 			for _, i := range allowedExtensions {
 				if strings.ToLower(filepath.Ext(path)) == i {
 					isAllowedExt = true
 				}
 			}
 
-			if !isAllowedExt {
+			if !isRootDir && !isAllowedExt {
 				log.WithField("path", path).Info("[SKIP] File not supported.")
 			}
 
 			// Files on the base root path will not be uploaded
-			if isAllowedExt && filepath.Dir(path) != config.PhotoLibraryPath {
+			if isAllowedExt && !isRootDir {
 				photoName := strings.Split(filepath.Base(path), ".")[0]
 				currentDir := filepath.Base(filepath.Dir(path))
 				// Check if file need to be uploaded.
