@@ -146,20 +146,26 @@ func RetrieveFromFlickr(client *flickr.FlickrClient) map[string]FlickrPhotoset {
 	} else {
 		for _, ps := range respSetList.Photosets.Items {
 			photoset := FlickrPhotoset{ID: ps.Id}
+			var photolist []FlickrPhoto
 
-			respPhotoList, err := photosets.GetPhotos(client, true, ps.Id, "", 0)
-			if err != nil {
-				log.Fatal("Could not retrieve the photo list. " + respPhotoList.ErrorMsg())
-			} else {
-				var photolist []FlickrPhoto
-				for _, ph := range respPhotoList.Photoset.Photos {
-					photolist = append(photolist, FlickrPhoto{ph.Id, ph.Title})
+			currentPage := 0
+			respPhotoList, err := photosets.GetPhotos(client, true, ps.Id, "", currentPage)
+			for len(respPhotoList.Photoset.Photos) > 0 {
+				if err != nil {
+					log.Fatal("Could not retrieve the photo list. " + respPhotoList.ErrorMsg())
+				} else {
+					for _, ph := range respPhotoList.Photoset.Photos {
+						photolist = append(photolist, FlickrPhoto{ph.Id, ph.Title})
+					}
+					currentPage++
+					respPhotoList, err = photosets.GetPhotos(client, true, ps.Id, "", currentPage)
 				}
-				sort.Sort(FlickrPhotosByTitle(photolist))
-				photoset = FlickrPhotoset{ID: ps.Id, Photos: photolist}
 			}
 
+			sort.Sort(FlickrPhotosByTitle(photolist))
+			photoset = FlickrPhotoset{ID: ps.Id, Photos: photolist}
 			result[ps.Title] = photoset
+			log.Info("[OK] Loaded ", len(photoset.Photos), " photos from ", photoset.ID)
 		}
 	}
 	log.Info("[OK] Loaded ", len(result), " photosets.")
