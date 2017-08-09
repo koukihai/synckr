@@ -194,11 +194,11 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 
 	resp, err := flickr.UploadFile(client, path, nil)
 	if err != nil {
-		log.Warn("[ERROR]Failed uploading:", err)
+		log.Error("[ERROR]Failed uploading:", err)
 		if resp != nil {
-			log.Fatal(fmt.Println(resp.ErrorMsg()))
+			log.Error(fmt.Println(resp.ErrorMsg()))
 		} else {
-			log.Fatal("Empty response")
+			log.Error("Empty response")
 		}
 	} else {
 		log.WithField("photo.id", resp.ID).Info("[OK] Photo uploaded")
@@ -208,7 +208,7 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 		if albumID == "" {
 			respS, err := photosets.Create(client, currentDir, "", resp.ID)
 			if err != nil {
-				log.Fatal("[ERROR] Failed creating set:", respS.ErrorMsg())
+				log.Error("[ERROR] Failed creating set:", respS.ErrorMsg())
 			} else {
 				log.WithField("set.id", respS.Set.Id).Info("[OK] Set created")
 				result = respS.Set.Id
@@ -217,7 +217,7 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 			// AlbumID is provided, we append the photo to the albumID
 			respAdd, err := photosets.AddPhoto(client, albumID, resp.ID)
 			if err != nil {
-				log.Fatal("Failed adding photo to the set:" + respAdd.ErrorMsg())
+				log.Error("Failed adding photo to the set:" + respAdd.ErrorMsg())
 			} else {
 				log.WithFields(logrus.Fields{
 					"photo.id": resp.ID,
@@ -324,7 +324,7 @@ func Process(config *Config, client *flickr.FlickrClient) (map[string]FlickrPhot
 					// The album is not present in flickr. The photo needs to be uploaded
 					photosetID, photoID, err := UploadPhoto(client, "", path)
 					if err != nil {
-						log.Fatal("[ERROR] Failed creating new album. ", err)
+						log.Error("[ERROR] Failed creating new album. ", err)
 					} else {
 						photolist := fromFlickr[currentDir].Photos
 						photolist = append(photolist, FlickrPhoto{photoID, photoName})
