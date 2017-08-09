@@ -1,4 +1,4 @@
-package synckr
+package synckrlib
 
 import (
 	"fmt"
@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 
 	"gopkg.in/masci/flickr.v2"
+	"gopkg.in/masci/flickr.v2/photos"
 	"gopkg.in/masci/flickr.v2/photosets"
 
 	"github.com/sirupsen/logrus"
@@ -176,11 +177,10 @@ func RetrieveFromFlickr(client *flickr.FlickrClient) map[string]FlickrPhotoset {
 func DeleteDupes(client *flickr.FlickrClient, fromFlickr *map[string]FlickrPhotoset) {
 
 	for albumName, flickrAlbum := range *fromFlickr {
-		log.Info("In album: ", albumName, ": ", flickrAlbum.Photos)
 		for phi, ph := range flickrAlbum.Photos {
 			if phi > 0 && ph.Title == flickrAlbum.Photos[phi-1].Title {
 				log.Info("Duplicate detected in ", albumName, ". Deleting  ", ph.Title)
-				//photos.Delete(client, ph.ID)
+				photos.Delete(client, ph.ID)
 			}
 		}
 	}
@@ -339,27 +339,4 @@ func Process(config *Config, client *flickr.FlickrClient) (map[string]FlickrPhot
 	})
 
 	return fromFlickr, err
-}
-
-// main is the pricipal entry point
-func main() {
-	logfile, err := os.OpenFile("synckr.log", os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Info("Failed to log to file, using default stderr")
-	} else {
-		log.Out = logfile
-	}
-	log.Out = os.Stdout
-	config, err := LoadConfiguration("./synckr.conf.json")
-	if err != nil {
-		log.Fatal("Unable to load configuration")
-	}
-
-	client, err := GetClient(&config)
-	if err != nil {
-		log.Fatal("Unable to instanciate flickrClient")
-	}
-
-	Process(&config, &client)
-
 }

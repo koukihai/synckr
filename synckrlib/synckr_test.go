@@ -1,9 +1,9 @@
-package synckr_test
+package synckrlib_test
 
 import (
 	"testing"
 
-	"github.com/koukihai/synckr"
+	synckr "github.com/koukihai/synckr/synckrlib"
 )
 
 func TestLoadConfiguration(t *testing.T) {
@@ -19,7 +19,7 @@ func TestLoadConfiguration(t *testing.T) {
 }
 
 func TestRetrieveFromFlickr(t *testing.T) {
-	config, err := synckr.LoadConfiguration("./synckr.conf.json")
+	config, err := synckr.LoadConfiguration("../synckr/synckr.conf.json")
 	if err != nil {
 		t.Error("Unable to load configuration")
 	}
