@@ -1,4 +1,4 @@
-package main
+package synckr
 
 import (
 	"fmt"
@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 
 	"gopkg.in/masci/flickr.v2"
-	"gopkg.in/masci/flickr.v2/photos"
 	"gopkg.in/masci/flickr.v2/photosets"
 
 	"github.com/sirupsen/logrus"
@@ -21,10 +20,10 @@ import (
 
 var log = logrus.New()
 
-// SynckrConfig contains all configuration parameters for
+// Config contains all configuration parameters for
 // the application.
 // It's filled from the json config file through LoadConfiguration
-type SynckrConfig struct {
+type Config struct {
 	APIKey           string   `json:"api_key"`
 	APISecret        string   `json:"api_secret"`
 	PhotoLibraryPath string   `json:"photo_library_path"`
@@ -32,6 +31,7 @@ type SynckrConfig struct {
 	OAuthTokenSecret string   `json:"oauth_token_secret"`
 	SkipDirs         []string `json:"skip_dirs"`
 	Extensions       []string `json:"extensions"`
+	DeleteDupes      bool     `json:"delete_dupes"`
 }
 
 // FlickrPhotoset contains the ID and the list of photo titles
@@ -58,26 +58,26 @@ func (a FlickrPhotosByTitle) Less(i, j int) bool { return a[i].Title < a[j].Titl
 
 // LoadConfiguration reads json configuration files and returns
 // a SynckrConfig pointer
-func LoadConfiguration() (SynckrConfig, error) {
-	var config SynckrConfig
-	raw, err := ioutil.ReadFile("./synckr.conf.json")
+func LoadConfiguration(filename string) (Config, error) {
+	var config Config
+	raw, err := ioutil.ReadFile(filename)
 
 	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	json.Unmarshal(raw, &config)
-	if config.APIKey == "" || config.APISecret == "" {
-		log.WithFields(logrus.Fields{
-			"api_key":    config.APIKey,
-			"api_secret": config.APISecret,
-		}).Fatal("Please visit https://www.flickr.com/services/apps/create/noncommercial/ to apply for a non-commercial key.")
+		log.Error(err.Error())
+	} else {
+		json.Unmarshal(raw, &config)
+		if config.APIKey == "" || config.APISecret == "" {
+			log.WithFields(logrus.Fields{
+				"api_key":    config.APIKey,
+				"api_secret": config.APISecret,
+			}).Fatal("Please visit https://www.flickr.com/services/apps/create/noncommercial/ to apply for a non-commercial key.")
+		}
 	}
 	return config, err
 }
 
 // GetClient returns a flickr client
-func GetClient(config *SynckrConfig) (flickr.FlickrClient, error) {
+func GetClient(config *Config) (flickr.FlickrClient, error) {
 	var err error
 	client := flickr.NewFlickrClient(config.APIKey, config.APISecret)
 
@@ -148,7 +148,7 @@ func RetrieveFromFlickr(client *flickr.FlickrClient) map[string]FlickrPhotoset {
 			photoset := FlickrPhotoset{ID: ps.Id}
 			var photolist []FlickrPhoto
 
-			currentPage := 0
+			currentPage := 1
 			respPhotoList, err := photosets.GetPhotos(client, true, ps.Id, "", currentPage)
 			for len(respPhotoList.Photoset.Photos) > 0 {
 				if err != nil {
@@ -165,7 +165,7 @@ func RetrieveFromFlickr(client *flickr.FlickrClient) map[string]FlickrPhotoset {
 			sort.Sort(FlickrPhotosByTitle(photolist))
 			photoset = FlickrPhotoset{ID: ps.Id, Photos: photolist}
 			result[ps.Title] = photoset
-			log.Info("[OK] Loaded ", len(photoset.Photos), " photos from ", photoset.ID)
+			log.Info("[OK] Loaded ", len(photoset.Photos), " photos from ", ps.Title)
 		}
 	}
 	log.Info("[OK] Loaded ", len(result), " photosets.")
@@ -173,15 +173,14 @@ func RetrieveFromFlickr(client *flickr.FlickrClient) map[string]FlickrPhotoset {
 }
 
 // DeleteDupes deletes duplicate files from an album
-func DeleteDupes(client *flickr.FlickrClient) {
+func DeleteDupes(client *flickr.FlickrClient, fromFlickr *map[string]FlickrPhotoset) {
 
-	fromFlickr := RetrieveFromFlickr(client)
-	for albumName, flickrAlbum := range fromFlickr {
+	for albumName, flickrAlbum := range *fromFlickr {
 		log.Info("In album: ", albumName, ": ", flickrAlbum.Photos)
 		for phi, ph := range flickrAlbum.Photos {
 			if phi > 0 && ph.Title == flickrAlbum.Photos[phi-1].Title {
 				log.Info("Duplicate detected in ", albumName, ". Deleting  ", ph.Title)
-				photos.Delete(client, ph.ID)
+				//photos.Delete(client, ph.ID)
 			}
 		}
 	}
@@ -237,7 +236,7 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 //   --> it will be skipped
 // If a file doesn't exist yet
 //   --> it will be uploaded into an album which title will be the parent directory name
-func Process(config *SynckrConfig, client *flickr.FlickrClient) (map[string]FlickrPhotoset, error) {
+func Process(config *Config, client *flickr.FlickrClient) (map[string]FlickrPhotoset, error) {
 	var err error
 
 	fromFlickr := RetrieveFromFlickr(client)
@@ -245,6 +244,10 @@ func Process(config *SynckrConfig, client *flickr.FlickrClient) (map[string]Flic
 		log.WithFields(logrus.Fields{
 			"photo_library_path": config.PhotoLibraryPath,
 		}).Fatal("Please update synckr.conf.json")
+	}
+
+	if config.DeleteDupes {
+		DeleteDupes(client, &fromFlickr)
 	}
 
 	// Walk photolibrarypath using a lambda as walk function
@@ -346,7 +349,8 @@ func main() {
 	} else {
 		log.Out = logfile
 	}
-	config, err := LoadConfiguration()
+	log.Out = os.Stdout
+	config, err := LoadConfiguration("./synckr.conf.json")
 	if err != nil {
 		log.Fatal("Unable to load configuration")
 	}
