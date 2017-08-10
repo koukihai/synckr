@@ -28,6 +28,6 @@ func main() {
 		log.Fatal("Unable to instanciate flickrClient")
 	}
 
-	synckr.Process(&config, &client)
+	synckr.Process(&config, &client, log)
 
 }

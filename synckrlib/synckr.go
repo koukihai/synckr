@@ -33,6 +33,7 @@ type Config struct {
 	SkipDirs         []string `json:"skip_dirs"`
 	Extensions       []string `json:"extensions"`
 	DeleteDupes      bool     `json:"delete_dupes"`
+	LogLevel         string   `json:"log_level"`
 }
 
 // FlickrPhotoset contains the ID and the list of photo titles
@@ -194,9 +195,9 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 
 	resp, err := flickr.UploadFile(client, path, nil)
 	if err != nil {
-		log.Error("[ERROR]Failed uploading:", err)
+		log.Error("[ERROR]Failed uploading ", path, " to ", albumID, ". Error:", err)
 		if resp != nil {
-			log.Error(fmt.Println(resp.ErrorMsg()))
+			log.Error(resp.ErrorMsg())
 		} else {
 			log.Error("Empty response")
 		}
@@ -217,7 +218,7 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 			// AlbumID is provided, we append the photo to the albumID
 			respAdd, err := photosets.AddPhoto(client, albumID, resp.ID)
 			if err != nil {
-				log.Error("Failed adding photo to the set:" + respAdd.ErrorMsg())
+				log.Error("[ERROR] Failed adding photo to the set:" + respAdd.ErrorMsg())
 			} else {
 				log.WithFields(logrus.Fields{
 					"photo.id": resp.ID,
@@ -230,14 +231,31 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 	return result, photoID, err
 }
 
+// SetLogLevel will update the log level according to the json
+// configuration file
+func SetLogLevel(config *Config, log *logrus.Logger) {
+	level, err := logrus.ParseLevel(config.LogLevel)
+	if err != nil {
+		log.Level = logrus.InfoLevel
+	} else {
+		log.Level = level
+	}
+}
+
 // Process will scan the files within the local drive and identify if they need to be uploaded
 // to flickr.
 // If a file already exists in flickr
 //   --> it will be skipped
 // If a file doesn't exist yet
 //   --> it will be uploaded into an album which title will be the parent directory name
-func Process(config *Config, client *flickr.FlickrClient) (map[string]FlickrPhotoset, error) {
+func Process(config *Config, client *flickr.FlickrClient, parentlog *logrus.Logger) (map[string]FlickrPhotoset, error) {
 	var err error
+
+	if parentlog != nil {
+		log = parentlog
+	}
+
+	SetLogLevel(config, log)
 
 	fromFlickr := RetrieveFromFlickr(client)
 	if config.PhotoLibraryPath == "" {

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	synckr "github.com/koukihai/synckr/synckrlib"
+	"github.com/sirupsen/logrus"
 )
 
 func TestLoadConfiguration(t *testing.T) {
@@ -33,4 +34,22 @@ func TestRetrieveFromFlickr(t *testing.T) {
 	if len(fromFlickr["Song Charts #1 - Mar. 17, 2008"].Photos) != 10 {
 		t.Error("Test album contains more than 10 photos")
 	}
+}
+
+func TestSetLogLevel(t *testing.T) {
+	var config synckr.Config
+	log := logrus.New()
+
+	config.LogLevel = "error"
+	synckr.SetLogLevel(&config, log)
+	if log.Level != logrus.ErrorLevel {
+		t.Error("ERROR level not parsed correctly. ", config.LogLevel, log.Level)
+	}
+
+	config.LogLevel = ""
+	synckr.SetLogLevel(&config, log)
+	if log.Level != logrus.InfoLevel {
+		t.Error("Default level should be INFO")
+	}
+
 }
