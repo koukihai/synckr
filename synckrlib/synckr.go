@@ -191,9 +191,44 @@ func DeleteDupes(client *flickr.FlickrClient, fromFlickr *map[string]FlickrPhoto
 	}
 }
 
+// CreateAlbum will create an album and set the photo as the primary photo
+func CreateAlbum(client *flickr.FlickrClient, albumName string, photoID string) (string, error) {
+	result := ""
+	respS, err := photosets.Create(client, albumName, "", photoID)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"code":    respS.ErrorCode(),
+			"message": respS.ErrorMsg(),
+		}).Error("[ERROR] Failed creating set.")
+	} else {
+		log.WithFields(logrus.Fields{
+			"album.name": albumName,
+			"album.id":   respS.Set.Id,
+		}).Info("[OK] Set created")
+		result = respS.Set.Id
+	}
+	return result, err
+}
+
+// AppendPhotoIntoExistingAlbum will add a photo into an existing album
+func AppendPhotoIntoExistingAlbum(client *flickr.FlickrClient, albumID string, photoID string) (string, error) {
+	respAdd, err := photosets.AddPhoto(client, albumID, photoID)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"code":    respAdd.ErrorCode(),
+			"message": respAdd.ErrorMsg(),
+		}).Error("[ERROR] Failed adding photo to the set.")
+	} else {
+		log.WithFields(logrus.Fields{
+			"photo.id": photoID,
+			"set.id":   albumID,
+		}).Info("[OK] Added photo to existing set.")
+	}
+	return albumID, err
+}
+
 // UploadPhoto uploads a given path into a given album. It creates a new album if none is provided
 func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (string, string, error) {
-	result := albumID
 	photoID := ""
 	currentDir := filepath.Base(filepath.Dir(path))
 
@@ -212,9 +247,6 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 		} else {
 			log.Error("[ERROR] Empty response")
 		}
-		// Sleep 5 minutes after a connection error
-		// TODO: Make it configurable
-		time.Sleep(5 * time.Minute)
 	} else {
 		log.WithFields(logrus.Fields{
 			"path":     path,
@@ -225,37 +257,14 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 
 		// AlbumID is not provided, we create a new album
 		if albumID == "" {
-			respS, err := photosets.Create(client, currentDir, "", resp.ID)
-			if err != nil {
-				log.WithFields(logrus.Fields{
-					"code":    respS.ErrorCode(),
-					"message": respS.ErrorMsg(),
-				}).Error("[ERROR] Failed creating set.")
-			} else {
-				log.WithFields(logrus.Fields{
-					"album.name": currentDir,
-					"album.id":   respS.Set.Id,
-				}).Info("[OK] Set created")
-				result = respS.Set.Id
-			}
+			albumID, err = CreateAlbum(client, currentDir, resp.ID)
 		} else {
 			// AlbumID is provided, we append the photo to the albumID
-			respAdd, err := photosets.AddPhoto(client, albumID, resp.ID)
-			if err != nil {
-				log.WithFields(logrus.Fields{
-					"code":    respAdd.ErrorCode(),
-					"message": respAdd.ErrorMsg(),
-				}).Error("[ERROR] Failed adding photo to the set.")
-			} else {
-				log.WithFields(logrus.Fields{
-					"photo.id": resp.ID,
-					"set.id":   albumID,
-				}).Info("[OK] Added photo to existing set.")
-			}
+			albumID, err = AppendPhotoIntoExistingAlbum(client, albumID, resp.ID)
 		}
 	}
 
-	return result, photoID, err
+	return albumID, photoID, err
 }
 
 // SetLogLevel will update the log level according to the json
@@ -349,6 +358,10 @@ func Process(config *Config, client *flickr.FlickrClient, parentlog *logrus.Logg
 			if isAllowedExt && !isRootDir {
 				photoName := strings.Split(filepath.Base(path), ".")[0]
 				currentDir := filepath.Base(filepath.Dir(path))
+
+				uploadNeeded := false
+				destinationAlbum := ""
+
 				// Check if file need to be uploaded.
 				_, albumPresent := fromFlickr[currentDir]
 
@@ -358,22 +371,45 @@ func Process(config *Config, client *flickr.FlickrClient, parentlog *logrus.Logg
 						return fromFlickr[currentDir].Photos[i].Title >= photoName
 					})
 					if phi == len(fromFlickr[currentDir].Photos) {
-						UploadPhoto(client, fromFlickr[currentDir].ID, path)
+						uploadNeeded = true
+						destinationAlbum = fromFlickr[currentDir].ID
 					} else {
 						log.WithFields(logrus.Fields{
 							"photo.name": photoName,
-							"set.name":   currentDir,
+							"album.name": currentDir,
 						}).Info("[SKIP]Already uploded")
 					}
 				} else {
 					// The album is not present in flickr. The photo needs to be uploaded
-					photosetID, photoID, err := UploadPhoto(client, "", path)
+					uploadNeeded = true
+					destinationAlbum = ""
+				}
+
+				if uploadNeeded {
+					attemptNb := 0
+					albumID, photoID, err := UploadPhoto(client, destinationAlbum, path)
+					// Try 5 times before skipping
+					// TODO: configure retries
+					for err != nil && attemptNb < 5 {
+						log.WithFields(logrus.Fields{
+							"attempt": attemptNb,
+						}).Warn("[WARNING] Upload attempt failed")
+						// Sleep 5 minutes after a connection error
+						// TODO: configure retry_interval
+						time.Sleep(5 * time.Minute)
+						attemptNb++
+						albumID, photoID, err = UploadPhoto(client, destinationAlbum, path)
+					}
 					if err != nil {
-						log.Error("[ERROR] Failed creating new album. ", err)
+						log.WithFields(logrus.Fields{
+							"attempt":    attemptNb,
+							"photo.name": photoName,
+							"album.name": currentDir,
+						}).Error("[ERROR] Upload failed")
 					} else {
 						photolist := fromFlickr[currentDir].Photos
 						photolist = append(photolist, FlickrPhoto{photoID, photoName})
-						fromFlickr[currentDir] = FlickrPhotoset{photosetID, photolist}
+						fromFlickr[currentDir] = FlickrPhotoset{albumID, photolist}
 					}
 				}
 
