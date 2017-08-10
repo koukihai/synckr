@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"sort"
 
@@ -180,7 +181,10 @@ func DeleteDupes(client *flickr.FlickrClient, fromFlickr *map[string]FlickrPhoto
 	for albumName, flickrAlbum := range *fromFlickr {
 		for phi, ph := range flickrAlbum.Photos {
 			if phi > 0 && ph.Title == flickrAlbum.Photos[phi-1].Title {
-				log.Info("Duplicate detected in ", albumName, ". Deleting  ", ph.Title)
+				log.WithFields(logrus.Fields{
+					"album.name": albumName,
+					"photo.name": ph.Title,
+				}).Warn("[DELETE] Deleting duplicate.")
 				photos.Delete(client, ph.ID)
 			}
 		}
@@ -195,30 +199,53 @@ func UploadPhoto(client *flickr.FlickrClient, albumID string, path string) (stri
 
 	resp, err := flickr.UploadFile(client, path, nil)
 	if err != nil {
-		log.Error("[ERROR]Failed uploading ", path, " to ", albumID, ". Error:", err)
+		log.WithFields(logrus.Fields{
+			"path":     path,
+			"album.id": albumID,
+			"error":    err,
+		}).Error("[ERROR] Photo upload failed.")
 		if resp != nil {
-			log.Error(resp.ErrorMsg())
+			log.WithFields(logrus.Fields{
+				"code":    resp.ErrorCode(),
+				"message": resp.ErrorMsg(),
+			}).Error("[ERROR] Response contents")
 		} else {
-			log.Error("Empty response")
+			log.Error("[ERROR] Empty response")
 		}
+		// Sleep 5 minutes after a connection error
+		// TODO: Make it configurable
+		time.Sleep(5 * time.Minute)
 	} else {
-		log.WithField("photo.id", resp.ID).Info("[OK] Photo uploaded")
+		log.WithFields(logrus.Fields{
+			"path":     path,
+			"album.id": albumID,
+			"photo.id": resp.ID,
+		}).Info("[OK] Photo uploaded")
 		photoID = resp.ID
 
 		// AlbumID is not provided, we create a new album
 		if albumID == "" {
 			respS, err := photosets.Create(client, currentDir, "", resp.ID)
 			if err != nil {
-				log.Error("[ERROR] Failed creating set:", respS.ErrorMsg())
+				log.WithFields(logrus.Fields{
+					"code":    respS.ErrorCode(),
+					"message": respS.ErrorMsg(),
+				}).Error("[ERROR] Failed creating set.")
 			} else {
-				log.WithField("set.id", respS.Set.Id).Info("[OK] Set created")
+				log.WithFields(logrus.Fields{
+					"album.name": currentDir,
+					"album.id":   respS.Set.Id,
+				}).Info("[OK] Set created")
 				result = respS.Set.Id
 			}
 		} else {
 			// AlbumID is provided, we append the photo to the albumID
 			respAdd, err := photosets.AddPhoto(client, albumID, resp.ID)
 			if err != nil {
-				log.Error("[ERROR] Failed adding photo to the set:" + respAdd.ErrorMsg())
+				log.WithFields(logrus.Fields{
+					"code":    respAdd.ErrorCode(),
+					"message": respAdd.ErrorMsg(),
+				}).Error("[ERROR] Failed adding photo to the set.")
 			} else {
 				log.WithFields(logrus.Fields{
 					"photo.id": resp.ID,
