@@ -1,2 +1,23 @@
+sudo: false
+dist: trusty
+
 language: go
-script: GOOS=linux GOARCH=arm go build -v -o bin/synckr.arm
+go:
+  - "1.11"
+install:
+  - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+  - dep ensure
+  - dep status
+script: 
+  - GOOS=linux GOARCH=arm go build -v -o bin/synckr.arm
+  - GOOS=linux GOARCH=amd64 go build -v -o bin/synckr.amd64
+  - GOOS=windows GOARCH=amd64 go build -v -o bin/synckr.exe
+deploy:
+  provider: releases
+  api_key: "$GITHUB_API_KEY"
+  file_glob: true
+  file:
+    - bin/*
+  skip_cleanup: true
+  on:
+    tags: true

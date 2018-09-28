@@ -1,9 +1,0 @@
-package: github.com/koukihai/synckr
-import:
-- package: github.com/sirupsen/logrus
-  version: 1.0.2
-- package: gopkg.in/masci/flickr.v2
-  version: "0.1"
-  subpackages:
-  - photos
-  - photosets
