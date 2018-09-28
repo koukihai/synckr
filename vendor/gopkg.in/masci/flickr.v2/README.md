@@ -3,9 +3,9 @@
 A go library to easily consume Flickr API.
 The project is currently under heavy development, so it hasn't a version number yet.
 
-[![GoDoc](https://godoc.org/github.com/masci/flickr.go?status.svg)](https://godoc.org/github.com/masci/flickr.go)
-[![Build Status](https://travis-ci.org/masci/flickr.svg)](https://travis-ci.org/masci/flickr.go)
-[![Coverage Status](https://coveralls.io/repos/masci/flickr/badge.svg)](https://coveralls.io/r/masci/flickr.go)
+[![GoDoc](https://godoc.org/gopkg.in/masci/flickr.v2?status.svg)](https://godoc.org/gopkg.in/masci/flickr.v2)
+[![Build Status](https://travis-ci.org/masci/flickr.svg)](https://travis-ci.org/masci/flickr)
+[![Coverage Status](https://coveralls.io/repos/masci/flickr/badge.svg)](https://coveralls.io/r/masci/flickr)
 
 ## Usage
 
@@ -16,8 +16,8 @@ package:
 
 ```go
 import "fmt"
-import "github.com/masci/flickr"
-import "github.com/masci/flickr/photosets"
+import "gopkg.in/masci/flickr.v2"
+import "gopkg.in/masci/flickr.v2/photosets"
 
 // create an API client with credentials
 client := flickr.NewFlickrClient("your_apikey", "your_apisecret")
@@ -28,18 +28,18 @@ response, _ := photosets.Create(client, "My Set", "Description", "primary_photo_
 fmt.Println("New photoset created:", response.Photoset.Id)
 ```
 
-`flickr` responses implement `flickr.FlickrResponse` interface. A response contains error codes 
-and error messages (if any) produced by Flickr or the specific data returned by the api call. 
+`flickr` responses implement `flickr.FlickrResponse` interface. A response contains error codes
+and error messages (if any) produced by Flickr or the specific data returned by the api call.
 Different methods may return different kind of responses.
 
 ### Upload a photo
 
 There are a number of functions that don't map any actual Flickr Api method
-(see below for the detailed list). For example, to upload a photo, you call the 
+(see below for the detailed list). For example, to upload a photo, you call the
 `UploadFile` or `UploadReader` functions in the `flickr` package:
 
 ```go
-import "github.com/masci/flickr"
+import "gopkg.in/masci/flickr.v2"
 
 
 // upload the image file with default (nil) options
@@ -54,7 +54,7 @@ OAuth since the original token-based method has been deprecated by Flickr. This
 is an example describing the OAuth worflow from a command line application:
 
 ```go
-import "github.com/masci/flickr"
+import "gopkg.in/masci/flickr.v2"
 
 client := flickr.NewFlickrClient("your_apikey", "your_apisecret")
 
@@ -83,20 +83,32 @@ already mapped, you can do it manually:
 
 ```go
 import "fmt"
-import "github.com/masci/flickr"
+import "gopkg.in/masci/flickr.v2"
 
 client := flickr.NewFlickrClient("your_apikey", "your_apisecret")
+client.Init()
 client.Args.Set("method", "flickr.cameras.getBrandModels")
 client.Args.Set("brand", "nikon")
 
+client.OAuthSign()
 response := &flickr.BasicResponse{}
-    err := flickr.DoGet(client, response)
-if err == nil {
+err := flickr.DoGet(client, response)
+
+if err != nil {
+    fmt.Printf("Error: %s", err)
+} else {
     fmt.Println("Api response:", response.Extra)
 }
 ```
 
 Checkout the `example` folder and the docs pages for more details.
+
+## Note on Go versions
+
+The latest version `v2` only supports go `1.6` and above, for Go `< 1.6` use the `v1` package:
+```
+go get gopkg.in/masci/flickr.v1
+```
 
 ## API Methods
 
@@ -113,6 +125,8 @@ These are methods that are not actually part of the Flickr API
 
 ### photos
  * flickr.photos.delete
+ * flickr.photos.getInfo
+ * flickr.photos.setDates
 
 ### photosets
  * flickr.photosets.addPhoto
@@ -129,8 +143,10 @@ These are methods that are not actually part of the Flickr API
  * flickr.photosets.reorderPhotos
  * flickr.photosets.setPrimaryPhoto
 
+### people
+ * flickr.people.getPhotos
+
 ### test
  * flickr.test.echo
  * flickr.test.login
  * flickr.test.null
-
